@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ハンドボール動画ライブラリ</title>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <header>
+        <h1>ハンドボール動画ライブラリ</h1>
+        <p>ハンドボールの技術向上のための動画集</p>
+    </header>
+
+    <div class="add-video-form">
+        <h2>新規動画の追加</h2>
+        <form id="videoForm">
+            <div class="form-group">
+                <label for="videoType">動画の種類:</label>
+                <select id="videoType" name="videoType" required>
+                    <option value="youtube">YouTube</option>
+                    <option value="local">ローカルファイル</option>
+                </select>
+            </div>
+            <div class="form-group youtube-input">
+                <label for="videoUrl">YouTube URL:</label>
+                <input type="url" id="videoUrl" name="videoUrl" placeholder="https://www.youtube.com/watch?v=...">
+                <p class="url-help">例: https://www.youtube.com/watch?v=XXXXXXXXXXX</p>
+            </div>
+            <div class="form-group local-input" style="display: none;">
+                <label for="videoFile">動画ファイル:</label>
+                <input type="file" id="videoFile" name="videoFile" accept="video/*">
+                <p class="file-help">対応形式: MP4, WebM, Ogg</p>
+            </div>
+            <div class="form-group">
+                <label for="videoTitle">タイトル:</label>
+                <input type="text" id="videoTitle" name="videoTitle" required placeholder="動画のタイトル">
+            </div>
+            <div class="form-group">
+                <label for="videoDescription">説明: <span class="optional">（任意）</span></label>
+                <textarea id="videoDescription" name="videoDescription" placeholder="動画の説明"></textarea>
+            </div>
+            <button type="submit" class="submit-btn">動画を追加</button>
+        </form>
+    </div>
+
+    <div class="video-grid">
+        <!-- 動画カードはJavaScriptで動的に追加されます -->
+    </div>
+
+    <!-- モーダル -->
+    <div id="videoModal" class="modal">
+        <div class="modal-content">
+            <span class="close-modal">&times;</span>
+            <div class="modal-video-container">
+                <iframe id="modalVideo" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>
+                <video id="modalLocalVideo" controls style="display: none;"></video>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // 動画データの管理
+        let videos = JSON.parse(localStorage.getItem('handballVideos')) || [];
+
+        // 動画タイプの切り替え
+        document.getElementById('videoType').addEventListener('change', function(e) {
+            const youtubeInput = document.querySelector('.youtube-input');
+            const localInput = document.querySelector('.local-input');
+            if (e.target.value === 'youtube') {
+                youtubeInput.style.display = 'block';
+                localInput.style.display = 'none';
+            } else {
+                youtubeInput.style.display = 'none';
+                localInput.style.display = 'block';
+            }
+        });
+
+        // 動画カードの作成
+        function createVideoCard(video) {
+            const videoCard = document.createElement('div');
+            videoCard.className = 'video-card';
+            videoCard.setAttribute('data-video-id', video.id);
+            videoCard.setAttribute('data-video-type', video.type);
+
+            let videoContent = '';
+            if (video.type === 'youtube') {
+                videoContent = `<iframe src="https://www.youtube.com/embed/${video.id}" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen></iframe>`;
+            } else {
+                videoContent = `<video src="${video.url}" controls></video>`;
+            }
+
+            videoCard.innerHTML = `
+                <div class="video-container">
+                    ${videoContent}
+                </div>
+                <div class="video-info">
+                    <h3 class="video-title">${video.title}</h3>
+                    ${video.description ? `<p class="video-description">${video.description}</p>` : ''}
+                    <button class="delete-btn" onclick="deleteVideo('${video.id}')">削除</button>
+                </div>
+            `;
+            return videoCard;
+        }
+
+        // 動画の削除
+        function deleteVideo(videoId) {
+            if (confirm('この動画を削除してもよろしいですか？')) {
+                videos = videos.filter(video => video.id !== videoId);
+                localStorage.setItem('handballVideos', JSON.stringify(videos));
+                renderVideos();
+            }
+        }
+
+        // 動画一覧の表示
+        function renderVideos() {
+            const videoGrid = document.querySelector('.video-grid');
+            videoGrid.innerHTML = '';
+            videos.forEach(video => {
+                videoGrid.appendChild(createVideoCard(video));
+            });
+        }
+
+        // フォームの処理
+        document.getElementById('videoForm').addEventListener('submit', async function(e) {
+            e.preventDefault();
+            
+            const videoType = document.getElementById('videoType').value;
+            const videoTitle = document.getElementById('videoTitle').value;
+            const videoDescription = document.getElementById('videoDescription').value;
+            
+            try {
+                let videoData;
+                
+                if (videoType === 'youtube') {
+                    const videoUrl = document.getElementById('videoUrl').value;
+                    function extractVideoId(url) {
+                        const regExp = /^.*(youtu.be\/|v\/|u\/\w\/|embed\/|watch\?v=|&v=)([^#&?]*).*/;
+                        const match = url.match(regExp);
+                        return (match && match[2].length === 11) ? match[2] : null;
+                    }
+                    
+                    const videoId = extractVideoId(videoUrl);
+                    if (!videoId) {
+                        alert('有効なYouTube URLを入力してください。');
+                        return;
+                    }
+                    
+                    videoData = {
+                        id: videoId,
+                        type: 'youtube',
+                        title: videoTitle,
+                        description: videoDescription
+                    };
+                } else {
+                    const videoFile = document.getElementById('videoFile').files[0];
+                    if (!videoFile) {
+                        alert('動画ファイルを選択してください。');
+                        return;
+                    }
+
+                    // ファイルサイズのチェック（100MB以下）
+                    if (videoFile.size > 100 * 1024 * 1024) {
+                        alert('ファイルサイズは100MB以下にしてください。');
+                        return;
+                    }
+
+                    // ファイルをBase64に変換
+                    const reader = new FileReader();
+                    reader.onload = function(e) {
+                        videoData = {
+                            id: Date.now().toString(),
+                            type: 'local',
+                            url: e.target.result,
+                            title: videoTitle,
+                            description: videoDescription
+                        };
+                        
+                        videos.push(videoData);
+                        localStorage.setItem('handballVideos', JSON.stringify(videos));
+                        renderVideos();
+                        this.reset();
+                        alert('動画が正常に追加されました！');
+                    }.bind(this);
+                    reader.readAsDataURL(videoFile);
+                    return;
+                }
+                
+                videos.push(videoData);
+                localStorage.setItem('handballVideos', JSON.stringify(videos));
+                renderVideos();
+                this.reset();
+                alert('動画が正常に追加されました！');
+            } catch (error) {
+                console.error('動画の追加中にエラーが発生しました:', error);
+                alert('動画の追加中にエラーが発生しました。もう一度お試しください。');
+            }
+        });
+
+        // モーダル関連の処理
+        const modal = document.getElementById('videoModal');
+        const modalVideo = document.getElementById('modalVideo');
+        const modalLocalVideo = document.getElementById('modalLocalVideo');
+        const closeBtn = document.querySelector('.close-modal');
+
+        // 動画カードのクリックイベント
+        document.addEventListener('click', function(e) {
+            const videoCard = e.target.closest('.video-card');
+            if (videoCard && !e.target.classList.contains('delete-btn')) {
+                const videoId = videoCard.getAttribute('data-video-id');
+                const videoType = videoCard.getAttribute('data-video-type');
+                const video = videos.find(v => v.id === videoId);
+
+                if (videoType === 'youtube') {
+                    modalVideo.src = `https://www.youtube.com/embed/${videoId}?autoplay=1`;
+                    modalVideo.style.display = 'block';
+                    modalLocalVideo.style.display = 'none';
+                } else {
+                    modalVideo.style.display = 'none';
+                    modalLocalVideo.src = video.url;
+                    modalLocalVideo.style.display = 'block';
+                }
+                modal.style.display = 'flex';
+            }
+        });
+
+        // モーダルを閉じる
+        closeBtn.addEventListener('click', function() {
+            modal.style.display = 'none';
+            modalVideo.src = '';
+            modalLocalVideo.src = '';
+        });
+
+        // モーダル外をクリックして閉じる
+        window.addEventListener('click', function(e) {
+            if (e.target === modal) {
+                modal.style.display = 'none';
+                modalVideo.src = '';
+                modalLocalVideo.src = '';
+            }
+        });
+
+        // ESCキーでモーダルを閉じる
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape' && modal.style.display === 'flex') {
+                modal.style.display = 'none';
+                modalVideo.src = '';
+                modalLocalVideo.src = '';
+            }
+        });
+
+        // 初期表示
+        renderVideos();
+    </script>
+</body>
+</html> 
